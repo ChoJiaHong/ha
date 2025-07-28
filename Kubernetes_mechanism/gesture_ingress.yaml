@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gesture-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # 測試時可用 HTTP，生產建議上 TLS
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: gesture.example.com
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: gesture-service
+            port:
+              number: 50051

@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy
+spec:
+  type: NodePort
+  ports:
+  - port: 30471
+    targetPort: 30471
+    protocol: TCP
+    name: grpc
+  selector:
+    app: envoy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      hostNetwork: true
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28.0
+        ports:
+        - containerPort: 30470
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+      volumes:
+      - name: envoy-config
+        configMap:
+          name: envoy-config

@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pose-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pose
+  template:
+    metadata:
+      labels:
+        app: pose
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - workergpu2
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - pose
+                topologyKey: kubernetes.io/hostname
+      shareProcessNamespace: true  # 啟用進程共享
+      containers:
+      - name: pose
+        image:  harbor.pdc.tw/yuchiehpaper/pose:latest
+        readinessProbe:
+          grpc:
+            port: 50052
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        ports:
+        - containerPort: 50052
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+      - name: dir-monitor
+        image: alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # 創建初始標記文件
+          mkdir -p /monitor-target
+          sleep 30  # 等待主容器初始化
+          while sleep 5; do
+            if [ ! -d "/monitor-target" ]; then
+              TARGET_PID=$(ps -ef | grep 'pose' | grep -v grep | awk '{print $1}')
+              kill -TERM $TARGET_PID
+            fi
+          done
+        volumeMounts:
+        - name: monitor-target
+          mountPath: /monitor-data  # 監控目錄路徑
+      - name: gpu-exporter
+        image: harbor.pdc.tw/yuchiehpaper/gpusidecar:latest
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        ports:
+        - name: gpu-metrics
+          containerPort: 9101
+      volumes:
+      - name: monitor-target
+        emptyDir: {}

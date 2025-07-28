@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pose-service
+spec:
+  selector:
+    app: pose
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 50052
+      targetPort: 50052
+      #nodePort: 30051  # 用 NodePort 暴露，將8888綁定到30051
+  type: ClusterIP

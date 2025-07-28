@@ -1,0 +1,30 @@
+[
+    {
+        "podIP": "10.244.1.72",
+        "hostPort": 30501,
+        "serviceType": "gesture",
+        "currentConnection": 3,
+        "nodeName": "workergpu",
+        "hostIP": "10.52.52.25",
+        "frequencyLimit": [
+            30,
+            15
+        ],
+        "currentFrequency": 30,
+        "workloadLimit": 90.5
+    },
+    {
+        "podIP": "10.244.1.71",
+        "hostPort": 30500,
+        "serviceType": "object",
+        "currentConnection": 2,
+        "nodeName": "workergpu",
+        "hostIP": "10.52.52.25",
+        "frequencyLimit": [
+            8,
+            4
+        ],
+        "currentFrequency": 4.0,
+        "workloadLimit": 8.0
+    }
+]

@@ -1,0 +1,7 @@
+opencv-python
+tensorboard
+tqdm
+matplotlib
+click
+pydantic
+grpcio-health-checking==1.65.0

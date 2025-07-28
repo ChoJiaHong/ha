@@ -1,0 +1,44 @@
+[
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 1,
+        "podIP": "10.244.1.71",
+        "serviceType": "object",
+        "nodeName": "workergpu"
+    },
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 2,
+        "podIP": "10.244.1.71",
+        "serviceType": "object",
+        "nodeName": "workergpu"
+    },
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 3,
+        "podIP": "10.244.2.73",
+        "serviceType": "object",
+        "nodeName": "workergpu2"
+    },
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 1,
+        "podIP": "10.244.1.72",
+        "serviceType": "gesture",
+        "nodeName": "workergpu"
+    },
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 2,
+        "podIP": "10.244.1.72",
+        "serviceType": "gesture",
+        "nodeName": "workergpu"
+    },
+    {
+        "agentIP": "10.52.52.58",
+        "agentPort": 3,
+        "podIP": "10.244.1.72",
+        "serviceType": "gesture",
+        "nodeName": "workergpu"
+    }
+]

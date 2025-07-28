@@ -1,0 +1,146 @@
+COMPUTED VALUES:
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: arha-node-type
+          operator: In
+          values:
+          - controller-node
+automountServiceAccountToken: true
+certManager:
+  caCertDuration: 43800h0m0s
+  certDuration: 8760h0m0s
+  enabled: false
+customAnnotations: {}
+customLabels: {}
+deploymentAnnotations: {}
+dnsConfig: {}
+env: []
+extraArguments: []
+extraContainers: []
+extraVolumeMounts: []
+extraVolumes: []
+hostNetwork:
+  enabled: false
+image:
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  repository: registry.k8s.io/prometheus-adapter/prometheus-adapter
+  tag: ""
+listenPort: 6443
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+logLevel: 4
+metricsRelistInterval: 1m
+namespaceOverride: ""
+nodeSelector: {}
+podAnnotations: {}
+podDisruptionBudget:
+  enabled: false
+  maxUnavailable: 1
+  minAvailable: null
+podLabels: {}
+podSecurityContext:
+  fsGroup: 10001
+priorityClassName: ""
+prometheus:
+  path: ""
+  port: 9090
+  url: http://prometheus-stack-kube-prom-prometheus.prometheus.svc.cluster.local
+psp:
+  annotations: {}
+  create: false
+rbac:
+  create: true
+  customMetrics:
+    resources:
+    - '*'
+  externalMetrics:
+    resources:
+    - '*'
+  useAuthReaderClusterRole: false
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+replicas: 1
+resources: {}
+rules:
+  default: false
+  custom:
+    # 原本的 DCGM GPU utilization rule
+    - seriesQuery: 'DCGM_FI_DEV_GPU_UTIL{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "DCGM_FI_DEV_GPU_UTIL"
+        as: "DCGM_FI_DEV_GPU_UTIL"
+      metricsQuery: 'avg(DCGM_FI_DEV_GPU_UTIL{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+
+    # sidecar exporter 暴露的 pod_gpu_utilization
+    - seriesQuery: 'pod_gpu_utilization'
+      resources:
+        overrides:
+          pod:
+            resource: "pod"
+          namespace:
+            resource: "namespace"
+      name:
+        matches: "pod_gpu_utilization"
+        as: "gpu_util_used"
+      metricsQuery: 'pod_gpu_utilization{<<.LabelMatchers>>}'
+  existing: null
+  external: []
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  seccompProfile:
+    type: RuntimeDefault
+service:
+  annotations: {}
+  ipDualStack:
+    enabled: false
+    ipFamilies:
+    - IPv6
+    - IPv4
+    ipFamilyPolicy: PreferDualStack
+  port: 443
+  type: ClusterIP
+serviceAccount:
+  annotations: {}
+  automountServiceAccountToken: true
+  create: true
+  name: null
+startupProbe: {}
+strategy:
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+  type: RollingUpdate
+tls:
+  ca: '# Public CA file that signed the APIService'
+  certificate: '# Public key of the APIService'
+  enable: false
+  key: '# Private key of the APIService'
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+topologySpreadConstraints: []

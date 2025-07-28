@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gesture-service
+spec:
+  selector:
+    app: gesture
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 50051
+      targetPort: 50051
+      #nodePort: 30050  # 用 NodePort 暴露，將8888綁定到30050
+  type: ClusterIP

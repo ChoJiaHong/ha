@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gesture-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gesture
+  template:
+    metadata:
+      labels:
+        app: gesture
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - workergpu
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - gesture
+                topologyKey: kubernetes.io/hostname
+      containers:
+      - name: gesture
+        image: harbor.pdc.tw/yuchiehpaper/gesture:latest
+        ports:
+        - containerPort: 50051
+        readinessProbe:
+          tcpSocket:
+            port: 50051
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+      - name: gpu-exporter
+        image: harbor.pdc.tw/yuchiehpaper/gpusidecar:latest
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        ports:
+        - name: gpu-metrics
+          containerPort: 9101
