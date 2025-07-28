@@ -1,6 +1,7 @@
-from ..ssd.vgg_ssd import create_vgg_ssd
+import pytest
 
-import torch
+torch = pytest.importorskip("torch")
+from ..ssd.vgg_ssd import create_vgg_ssd
 import tempfile
 
 
