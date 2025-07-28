@@ -5,6 +5,7 @@ from typing import List, Optional
 import json
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from Controller import crd_utils
 from starlette.responses import JSONResponse
 import copy
 import yaml
@@ -18,10 +19,8 @@ import os
 
 GPU_MEMORY_LABEL = "nvidia.com/gpu.memory"
 IN_CLUSTER = True
-SERVICE_FILE = './information/service.json'
-SERVICESPEC_FILE = './information/serviceSpec.json'
-SUBSCRIPTION_FILE = './information/subscription.json'
-NODE_STATUS_FILE = './information/nodestatus.json'
+crd_utils.IN_CLUSTER = IN_CLUSTER
+
 LOG_FILE = './logdir/controller.log'
 
 locked = False
@@ -37,6 +36,19 @@ logging.basicConfig(
     filename= LOG_FILE,
     format='%(asctime)s %(levelname)s: %(message)s',
     level=logging.INFO
+)
+
+# Helper functions for interacting with Kubernetes CRDs are provided in
+# crd_utils. Import frequently used helpers for convenience.
+from Controller.crd_utils import (
+    load_service_data,
+    save_service_data,
+    load_servicespec_data,
+    save_servicespec_data,
+    load_subscription_data,
+    save_subscription_data,
+    load_nodestatus_data,
+    save_nodestatus_data,
 )
 
 class SubscriptionRequest(BaseModel):
@@ -71,9 +83,8 @@ def lifespan(app: FastAPI):
         else:
             node_health_status[node] = "unhealthy"
 
-    with open(NODE_STATUS_FILE, 'w') as node_status_file:
-        json.dump(node_health_status, node_status_file, indent=4)
-    yield 
+    save_nodestatus_data(node_health_status)
+    yield
 
 app = FastAPI(lifespan=lifespan)
 
@@ -125,19 +136,17 @@ async def subscribe(request: Request, subscription: SubscriptionRequest):
 
     # 檢查請求中的serviceType是否存在
     try:
-        with open(SERVICESPEC_FILE, 'r') as serviceSpec_jsonFile:
-            try:
-                serviceSpec_data = json.load(serviceSpec_jsonFile)
-                for serviceSpec in serviceSpec_data:
-                    if serviceSpec['serviceType'] == serviceType:
-                        serviceNotFound = False
-                        break
-                if (serviceNotFound):
-                    raise HTTPException(status_code=500, detail="Service not in serviceSpec file")
-            except json.decoder.JSONDecodeError: 
-                raise HTTPException(status_code=500, detail="ServiceSpec file is empty")
+        serviceSpec_data = load_servicespec_data()
+        for serviceSpec in serviceSpec_data:
+            if serviceSpec['serviceType'] == serviceType:
+                serviceNotFound = False
+                break
+        if serviceNotFound:
+            raise HTTPException(status_code=500, detail="Service not in serviceSpec file")
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="ServiceSpec file not found")
+    except json.decoder.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="ServiceSpec file is empty")
 
     global locked
     while locked:
@@ -145,11 +154,7 @@ async def subscribe(request: Request, subscription: SubscriptionRequest):
 
     locked = True
     agentCounter = 1
-    with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-        try:
-            subscription_list = json.load(subscription_jsonFile)
-        except json.decoder.JSONDecodeError: 
-            subscription_list = []
+    subscription_list = load_subscription_data()
     
     agentCounter += sum(1 for subscription in subscription_list if subscription['serviceType'] == serviceType)
     relation_list = compute_frequnecy(serviceType, agentCounter)
@@ -163,17 +168,12 @@ async def subscribe(request: Request, subscription: SubscriptionRequest):
         locked = False
         return 'reject the subscription' 
     elif newAgentCounter == agentCounter:
-        with open(SERVICE_FILE, 'w') as service_jsonFile:
-            json.dump(relation_list, service_jsonFile, indent=4)
+        save_service_data(relation_list)
 
         # 這邊adjust_frequency只會調整new agent以外的配對關係
         serviceIndex = adjust_frequency(serviceType)
 
-        with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-            try:
-                subscription_list = json.load(subscription_jsonFile)
-            except json.decoder.JSONDecodeError: 
-                subscription_list = []
+        subscription_list = load_subscription_data()
 
         if serviceIndex is None:
             locked = False
@@ -187,14 +187,13 @@ async def subscribe(request: Request, subscription: SubscriptionRequest):
                 "serviceType": serviceType,
                 "nodeName": relation_list[serviceIndex]['nodeName']            
             })
-        with open(SUBSCRIPTION_FILE, 'w') as subscription_jsonFile:
-            json.dump(subscription_list, subscription_jsonFile, indent=4)
-            locked = False
-            return {
-                "IP": relation_list[serviceIndex]['hostIP'],
-                "Port": relation_list[serviceIndex]['hostPort'],
-                "Frequency": relation_list[serviceIndex]['currentFrequency']
-            }
+        save_subscription_data(subscription_list)
+        locked = False
+        return {
+            "IP": relation_list[serviceIndex]['hostIP'],
+            "Port": relation_list[serviceIndex]['hostPort'],
+            "Frequency": relation_list[serviceIndex]['currentFrequency']
+        }
     else:
         locked = False
         return f"newAgentCounter={newAgentCounter} and agentCounter={agentCounter}" 
@@ -217,11 +216,7 @@ async def alert(request: Request):
 
         # 將故障的Computing Node上的所有服務從資料中清除
         try:
-            with open(SERVICE_FILE, 'r') as service_file:
-                try:
-                    service_list = json.load(service_file)
-                except json.decoder.JSONDecodeError:
-                    service_list = []
+            service_list = load_service_data()
         except FileNotFoundError:
             raise HTTPException(status_code=500, detail="Service file not found")
         
@@ -229,9 +224,8 @@ async def alert(request: Request):
         service_list = [item for item in service_list if item.get('nodeName') != failnodeName]
 
         try:
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(service_list, service_file, indent=4)
-        except Exception as e:
+            save_service_data(service_list)
+        except Exception:
             raise HTTPException(status_code=500, detail="Failed to write to service file")
 
         # 處理故障節點上的所有service
@@ -242,11 +236,7 @@ async def alert(request: Request):
             
             # 打開訂閱資料
             try:
-                with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-                    try:
-                        subscription_list = json.load(subscription_jsonFile)
-                    except json.decoder.JSONDecodeError:
-                        subscription_list = []
+                subscription_list = load_subscription_data()
             except FileNotFoundError:
                 raise HTTPException(status_code=500, detail="Subscription file not found")
             
@@ -275,12 +265,10 @@ async def alert(request: Request):
                         count += 1
                         if count >= unsunscribedAgentCounter:
                             break
-                with open(SUBSCRIPTION_FILE, 'w') as subscription_file:
-                    json.dump(subscription_list, subscription_file, indent=4)
+                save_subscription_data(subscription_list)
 
-            # 將新的配對方式存入service_file中
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(relation_list, service_file, indent=4)                
+            # 將新的配對方式存入service資料中
+            save_service_data(relation_list)
             adjust_frequency(str(failed_service['serviceType']))        
     elif alertType == 'pod_failure':
 
@@ -289,11 +277,7 @@ async def alert(request: Request):
         hostPort = int(hostPort)
         delete_pod(failPodName)
 
-        with open(SERVICE_FILE, 'r') as service_file:
-            try:
-                service_list = json.load(service_file)
-            except json.decoder.JSONDecodeError:
-                service_list = []
+        service_list = load_service_data()
 
         # 找到符合條件的元素
         failed_service = next(
@@ -308,18 +292,13 @@ async def alert(request: Request):
         if failed_service:
             service_list.remove(failed_service)
 
-        with open(SERVICE_FILE, 'w') as service_file:
-            json.dump(service_list, service_file, indent=4)
+        save_service_data(service_list)
 
         if failed_service['currentConnection'] != 0:
 
             # 打開訂閱資料
             try:
-                with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-                    try:
-                        subscription_list = json.load(subscription_jsonFile)
-                    except json.decoder.JSONDecodeError:
-                        subscription_list = []
+                subscription_list = load_subscription_data()
             except FileNotFoundError:
                 raise HTTPException(status_code=500, detail="Subscription file not found")
             
@@ -343,11 +322,9 @@ async def alert(request: Request):
                         count += 1
                         if count >= unsunscribedAgentCounter:
                             break
-                with open(SUBSCRIPTION_FILE, 'w') as subscription_file:
-                    json.dump(subscription_list, subscription_file, indent=4)
+                save_subscription_data(subscription_list)
 
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(relation_list, service_file, indent=4)
+            save_service_data(relation_list)
 
         adjust_frequency(str(failed_service['serviceType']))  
     locked = False
@@ -363,16 +340,11 @@ async def deploypod(request: Request):
     resp = deploy_pod(service_type,hostPort, node_name)
 
     try:
-        with open(SERVICE_FILE, 'r') as service_jsonFile:
-            try:
-                service_data = json.load(service_jsonFile)
-            except json.decoder.JSONDecodeError: # 要是當前集群中沒有任何Pod
-                service_data = []
+        service_data = load_service_data()
     except FileNotFoundError:
         return "Service file not found"
 
-    with open(SERVICESPEC_FILE, 'r') as serviceSpec_jsonFile:
-        serviceSpec_list = json.load(serviceSpec_jsonFile)
+    serviceSpec_list = load_servicespec_data()
     
     for serviceSpec in serviceSpec_list:
         if serviceSpec['serviceType'] == service_type:
@@ -404,8 +376,7 @@ async def deploypod(request: Request):
         "workloadLimit" : workloadLimit/serviceamountonnode        
     })
 
-    with open(SERVICE_FILE, 'w') as service_file:
-        json.dump(service_data, service_file, indent=4)     
+    save_service_data(service_data)
 
     return 'deploy finish'
 
@@ -416,11 +387,7 @@ async def unsubscribe(request: Request):
     agent_port = data['port']
 
     try:
-        with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-            try:
-                subscription_data = json.load(subscription_jsonFile)
-            except json.decoder.JSONDecodeError:
-                subscription_data = []
+        subscription_data = load_subscription_data()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail= "Subscription file not found")
     
@@ -435,27 +402,23 @@ async def unsubscribe(request: Request):
             new_subscription_data.append(subscription)
 
     try:
-        with open(SUBSCRIPTION_FILE, 'w') as subscription_file:
-            json.dump(new_subscription_data, subscription_file, indent=4)
-    except Exception as e:
+        save_subscription_data(new_subscription_data)
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to write to subscription file")
     
     try:
-        with open(SERVICE_FILE, 'r') as service_jsonFile:
-            try:
-                service_data = json.load(service_jsonFile)
-            except json.decoder.JSONDecodeError: # 要是當前集群中沒有任何Pod
-                raise HTTPException(status_code=404, detail= "Service file is empty")
+        service_data = load_service_data()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail= "Service file not found")
+    if not service_data:
+        raise HTTPException(status_code=404, detail= "Service file is empty")
     
     for service in service_data:
         # 更新服務當前的連線數
         if service['podIP'] in podip_set:
             service['currentConnection'] -=1 
 
-    with open(SERVICE_FILE, 'w') as service_jsonFile:
-        json.dump(service_data, service_jsonFile, indent=4)
+    save_service_data(service_data)
 
     return {'message' : 'unsubscribe finish'}
 
@@ -463,11 +426,7 @@ def compute_frequnecy(serviceType: str, agentCounter: int):
 
     mustAutoScaling = True
 
-    with open(SERVICE_FILE, 'r') as service_jsonFile:
-        try:
-            service_list = json.load(service_jsonFile)
-        except json.decoder.JSONDecodeError:
-            service_list = []
+    service_list = load_service_data()
 
     for service in service_list:
         if service['serviceType'] == serviceType:
@@ -481,11 +440,7 @@ def compute_frequnecy(serviceType: str, agentCounter: int):
                 break
     if mustAutoScaling:
         deploy_service(serviceType)
-        with open(SERVICE_FILE, 'r') as service_jsonFile:
-            try:
-                service_list = json.load(service_jsonFile)
-            except json.decoder.JSONDecodeError:
-                service_list = []    
+        service_list = load_service_data()
         status, relation_list = optimize(serviceType, agentCounter, service_list)   
         while status=='fail':
             agentCounter -=1
@@ -500,8 +455,7 @@ def deploy_service(serviceType: str):
     serviceSpec_dict = {}
     usedPort = set()
 
-    with open(SERVICESPEC_FILE, 'r') as serviceSpec_jsonFile:
-        serviceSpec_list = json.load(serviceSpec_jsonFile)
+    serviceSpec_list = load_servicespec_data()
 
     for serviceSpec in serviceSpec_list:
         nodeDeployed_list.extend(serviceSpec["workAbility"].keys())
@@ -511,17 +465,12 @@ def deploy_service(serviceType: str):
     config.load_incluster_config() if IN_CLUSTER else config.load_kube_config()
     core_api = client.CoreV1Api()
 
-    with open(SERVICE_FILE, 'r') as service_jsonFile:
-        try:
-            service_list = json.load(service_jsonFile)
-        except json.decoder.JSONDecodeError:
-            service_list = []
+    service_list = load_service_data()
 
     node_status_sync(nodeDeployed_list)
 
     # 更新節點當前狀態
-    with open(NODE_STATUS_FILE, 'r') as node_status_jsonFile:
-        node_status_data = json.load(node_status_jsonFile)    
+    node_status_data = load_nodestatus_data()
 
     """
     檢查各節點是否同時滿足以下條件
@@ -591,8 +540,7 @@ def deploy_service(serviceType: str):
         if service_list != originalService_list:
             adjustFrequencyServiceType_list.append(service_list[index]['serviceType'])
 
-    with open(SERVICE_FILE, 'w') as service_jsonFile:
-        json.dump(service_list, service_jsonFile, indent=4)
+    save_service_data(service_list)
 
     # 調整傳送頻率和配對關係
     for adjustFrequencyServiceType in adjustFrequencyServiceType_list:
@@ -645,8 +593,7 @@ def deploy_service(serviceType: str):
         "workloadLimit" : serviceSpec_dict[serviceType]['workAbility'][nodeName] / float(len(indexOfServiceOnDeployedNode)+1)
     })
 
-    with open(SERVICE_FILE, 'w') as service_jsonFile:
-        json.dump(service_list, service_jsonFile, indent=4)
+    save_service_data(service_list)
 
     logging.info(f"deploy {serviceType} service successfully")
     return f"deploy {serviceType} service successfully"
@@ -655,17 +602,8 @@ def adjust_frequency(serviceType: str):
 
     podIPIndex_dict = {}
 
-    with open(SERVICE_FILE, 'r') as service_jsonFile:
-        try:
-            service_list = json.load(service_jsonFile)
-        except json.decoder.JSONDecodeError:
-            service_list = []
-
-    with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-        try:
-            subscription_list = json.load(subscription_jsonFile)
-        except json.decoder.JSONDecodeError:
-            subscription_list = []
+    service_list = load_service_data()
+    subscription_list = load_subscription_data()
 
     for index, service in enumerate(service_list):
         if service['serviceType'] == serviceType:
@@ -711,9 +649,8 @@ def adjust_frequency(serviceType: str):
                 subscription_list[reconfigureAgentIndex]['nodeName'] = str(service_list[value['index']]['nodeName'])
                 break
     
-    # 更新subscription.json的內容
-    with open(SUBSCRIPTION_FILE, 'w') as subscription_jsonFile:
-        json.dump(subscription_list, subscription_jsonFile, indent=4)
+    # 更新subscription資料
+    save_subscription_data(subscription_list)
 
     for key, value in podIPIndex_dict.items():
         if int(value['currentConnection']) !=0:
@@ -888,9 +825,8 @@ def node_status_sync(node_name_list: List[str]):
                 # 捕捉任何執行過程中的例外情況
                 node_health_status[node_name] = "unhealthy"
     try:
-        with open(NODE_STATUS_FILE, 'w') as node_status_file:
-            json.dump(node_health_status, node_status_file, indent=4)
-    except Exception as e:
+        save_nodestatus_data(node_health_status)
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to write to node_status file")
     # 將結果轉換為 JSON 格式並返回
     return json.dumps(node_health_status, indent=4)
