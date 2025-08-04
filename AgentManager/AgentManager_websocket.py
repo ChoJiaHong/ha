@@ -13,7 +13,6 @@ import websockets
 
 # python AgentManager_websocket.py number_of_agenthost agenthost1_ip agenthost1_account agenthost1_passward agenthost2_ip genthost2_account agenthost2_passward
 # e.g. python AgentManager_websocket.py 2 10.52.52.58 user58 user 10.52.52.59 user59 user
-
 Agent_Host_Number = int(sys.argv[1])
 
 current_agent_host = -1

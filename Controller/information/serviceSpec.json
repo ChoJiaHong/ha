@@ -2,25 +2,25 @@
     {
         "serviceType": "gesture",
         "frequencyLimit": [
-            5,
-            3
+            20,
+            10
         ],
         "workAbility":{
-            "workergpu" : 10,
-            "workergpu2" : 10
+            "workgpu" : 180,
+            "pdclab" : 230
         },
-        "gpuMemoryRequest" : 3 
+        "gpuMemoryRequest" : 1
     },
     {
-        "serviceType": "object",
+        "serviceType": "pose",
         "frequencyLimit": [
-            5,
-            3
+            30,
+            15
         ],
         "workAbility":{
-            "workergpu" : 10,
-            "workergpu2" : 10
+            "workgpu" : 66,
+            "pdclab" : 80
         },
-        "gpuMemoryRequest" : 3 
+        "gpuMemoryRequest" : 1
     }
 ]

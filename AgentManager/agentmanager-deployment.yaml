@@ -16,6 +16,7 @@ spec:
       containers:
         - name: agentmanager
           image: harbor.pdc.tw/yuchiehpaper/agentmanager:latest
+          #image: hiro08081/agentmanager:
           ports:
             - name: http
               containerPort: 8888
@@ -23,13 +24,10 @@ spec:
               containerPort: 50051
           command: ["python3", "AgentManager_websocket.py"]  
           args:
-          - "2"           # 對應到你的 Agent_Host數量
-          - "10.52.52.58"  # 對應到你的 Agent_Host
-          - "user58"         # 對應到你的 Agent_Host_ACCOUNT
-          - "user"       # 對應到你的 Agent_Host_PASSWORD
-          - "10.52.52.59"  # 對應到你的 Agent_Host
-          - "user59"         # 對應到你的 Agent_Host_ACCOUNT
-          - "user"       # 對應到你的 Agent_Host_PASSWORD
+          - "1"           # 對應到你的 Agent_Host數量
+          - "10.52.52.111"  # 對應到你的 Agent_Host
+          - "hiro"         # 對應到你的 Agent_Host_ACCOUNT
+          - "9722"       # 對應到你的 Agent_Host_PASSWORD
           volumeMounts:
             - name: logs-volume
               mountPath: /app/logs
