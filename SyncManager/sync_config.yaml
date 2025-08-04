@@ -1,0 +1,7 @@
+sync_pairs:
+  - group: example.com
+    version: v1
+    plural: foos
+    name: sample-foo
+    namespace: default
+    file: /tmp/foo.json
