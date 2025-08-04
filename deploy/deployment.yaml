@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sync-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sync-manager
+  template:
+    metadata:
+      labels:
+        app: sync-manager
+    spec:
+      serviceAccountName: sync-manager-sa
+      containers:
+      - name: main
+        image: example/main:latest
+        volumeMounts:
+        - name: service-info
+          mountPath: /data/service-info.json
+          subPath: service-info.json
+      - name: sidecar
+        image: example/sidecar:latest
+        volumeMounts:
+        - name: service-info
+          mountPath: /data/service-info.json
+          subPath: service-info.json
+      volumes:
+      - name: service-info
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sync-manager-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sync-manager-role
+rules:
+- apiGroups: ["ha.example.com"]
+  resources: ["services"]
+  verbs: ["get","list","watch","create","update","patch","delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sync-manager-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: sync-manager-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sync-manager-role
