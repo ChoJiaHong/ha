@@ -7,3 +7,5 @@ crashloopbackoff.yaml
 gesture.yaml
 objecton25.yaml
 values.yaml
+__pycache__/
+*.pyc
