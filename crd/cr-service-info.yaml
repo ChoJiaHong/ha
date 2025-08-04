@@ -1,8 +1,0 @@
-apiVersion: ha.example.com/v1
-kind: Data
-metadata:
-  name: service-info
-  namespace: default
-data:
-  status: healthy
-  updatedAt: "2025-07-29T12:00:00Z"

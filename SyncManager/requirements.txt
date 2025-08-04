@@ -1,4 +1,0 @@
-kubernetes
-watchdog
-requests
-pyyaml
