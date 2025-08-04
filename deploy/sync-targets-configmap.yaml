@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sync-manager-targets
+data:
+  targets: |
+    - name: cluster-a
+      url: https://cluster-a.example.com
+    - name: cluster-b
+      url: https://cluster-b.example.com
