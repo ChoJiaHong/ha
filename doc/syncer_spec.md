@@ -1,11 +1,10 @@
-# Syncer Development Specification
+# Syncer 开发规范
 
-## Project Goal
+## 项目目标
 
-Build a sidecar component that keeps local JSON files used by the existing controller
-in sync with Kubernetes custom resources (CRs) without modifying the controller logic.
+构建一个 Sidecar 组件，使本地 JSON 文件（被现有 Controller 使用）与 Kubernetes 自定义资源（CR）保持同步，无需修改 Controller 逻辑。
 
-## Files Operated by the Controller
+## Controller 操作的文件
 
 ```
 Controller/information/
@@ -15,25 +14,25 @@ Controller/information/
 └── subscription.json
 ```
 
-## Synchronization Targets
+## 同步目标
 
-| File | CRD | CR Name | Plural |
-| ---- | --- | ------- | ------ |
-| `service.json` | `Data` in `services.ha.example.com/v1` | `service-info` | `services` |
-| `serviceSpec.json` | `Data` in `servicespecs.ha.example.com/v1` | `servicespec-info` | `servicespecs` |
+| 文件                  | CRD                                         | CR 名称               | Plural          |
+| ------------------- | ------------------------------------------- | ------------------- | --------------- |
+| `service.json`      | `Data` in `services.ha.example.com/v1`      | `service-info`      | `services`      |
+| `serviceSpec.json`  | `Data` in `servicespecs.ha.example.com/v1`  | `servicespec-info`  | `servicespecs`  |
 | `subscription.json` | `Data` in `subscriptions.ha.example.com/v1` | `subscription-info` | `subscriptions` |
-| `nodestatus.json` | `Data` in `nodestatuses.ha.example.com/v1` | `nodestatus-info` | `nodestatuses` |
+| `nodestatus.json`   | `Data` in `nodestatuses.ha.example.com/v1`  | `nodestatus-info`   | `nodestatuses`  |
 
-## Synchronization Behavior
+## 同步行为
 
-- Changes to local files update the corresponding CR.
-- External changes to a CR are written back to the local file.
-- MD5 hashes detect differences and prevent feedback loops.
-- On startup, the syncer creates empty CRs when they do not exist.
+* 本地文件变更会更新对应的 CR。
+* CR 的外部变更会同步写回本地文件。
+* 使用 MD5 哈希检测差异，防止同步回环。
+* 启动时，若 CR 不存在，则自动创建空 CR。
 
-## Deployment
+## 部署方式
 
-Deploy the syncer as a sidecar sharing an `emptyDir` volume with the controller. Example:
+将 syncer 作为 sidecar 部署，与 controller 共享一个 `emptyDir` 卷。示例：
 
 ```yaml
 apiVersion: apps/v1

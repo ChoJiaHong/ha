@@ -36,7 +36,7 @@ spec:
             - name: information
               mountPath: /app/information
         - name: crd-syncer
-          image: your-crd-syncer-image:latest
+          image: hiro08081/crd-syncer
           env:
             - name: FILE_MAP
               value: |
