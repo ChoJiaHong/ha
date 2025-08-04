@@ -1,18 +1,15 @@
-# CRD Syncer
+CRD Syncer
+此 sidecar 元件負責將本地 JSON 檔案與 Kubernetes 自訂資源進行同步。
 
-This sidecar component synchronizes local JSON files with Kubernetes custom resources.
+環境變數
 
-## Environment variables
+* **FILE\_MAP**：以換行分隔的對應關係，格式為 `file_path=plural:name`。
+* **CRD\_GROUP**：CRD 的 API group（例如 ha.example.com）。
+* **CRD\_VERSION**：CRD 的 API 版本（例如 v1）。
+* **NAMESPACE**：自訂資源所屬的命名空間，預設為 default。
+* **IN\_CLUSTER**：在叢集內執行時設為 true。
+* **SYNC\_INTERVAL**：輪詢間隔秒數，預設為 5。
 
-- `FILE_MAP`: newline separated mappings in the form `file_path=plural:name`.
-- `CRD_GROUP`: CRD API group (e.g. `ha.example.com`).
-- `CRD_VERSION`: CRD API version (e.g. `v1`).
-- `NAMESPACE`: namespace of the custom resources. Defaults to `default`.
-- `IN_CLUSTER`: set to `true` when running inside a cluster.
-- `SYNC_INTERVAL`: polling interval in seconds. Defaults to 5.
-
-## Usage
-
-The syncer keeps files and CRs in sync in both directions using MD5 hashes to
-avoid feedback loops. An example deployment using an `emptyDir` volume is
-available in the project documentation.
+用法
+Syncer 會使用 MD5 雜湊值，雙向同步檔案與 CR，避免同步時發生回饋迴圈。
+範例部署方式（使用 emptyDir 卷）請參考專案文件。

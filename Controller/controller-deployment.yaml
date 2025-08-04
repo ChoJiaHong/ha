@@ -35,6 +35,24 @@ spec:
           volumeMounts:
             - name: information
               mountPath: /app/information
+        - name: crd-syncer
+          image: your-crd-syncer-image:latest
+          env:
+            - name: FILE_MAP
+              value: |
+                /data/service.json=services:service-info
+                /data/serviceSpec.json=servicespecs:servicespec-info
+                /data/subscription.json=subscriptions:subscription-info
+                /data/nodestatus.json=nodestatuses:nodestatus-info
+            - name: CRD_GROUP
+              value: ha.example.com
+            - name: CRD_VERSION
+              value: v1
+            - name: IN_CLUSTER
+              value: "true"
+          volumeMounts:
+            - mountPath: /data
+              name: shared-data
       volumes:
         - name: information
           persistentVolumeClaim:
@@ -42,15 +60,17 @@ spec:
         - name: logs-volume
           persistentVolumeClaim:
             claimName: arha-logs-pvc
+        - name: shared-data
+          emptyDir: {}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-            - matchExpressions:
-              - key: arha-node-type
-                operator: In
-                values:
-                - controller-node
+              - matchExpressions:
+                  - key: arha-node-type
+                    operator: In
+                    values:
+                      - controller-node
       tolerations:
         - key: "node-role.kubernetes.io/control-plane"
           operator: "Exists"
