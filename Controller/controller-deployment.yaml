@@ -35,23 +35,43 @@ spec:
           volumeMounts:
             - name: information
               mountPath: /app/information
-      volumes:
-        - name: information
-          persistentVolumeClaim:
-            claimName: arha-system-information
-        - name: logs-volume
-          persistentVolumeClaim:
-            claimName: arha-logs-pvc
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: arha-node-type
-                operator: In
-                values:
-                - controller-node
-      tolerations:
-        - key: "node-role.kubernetes.io/control-plane"
-          operator: "Exists"
-          effect: "NoSchedule"
+        - name: crd-syncer
+          image: harbor.pdc.tw/arha/syncer:latest
+          env:
+            - name: FILE_MAP
+              value: |
+                /app/information/service.json=services:service-info
+                /app/information/serviceSpec.json=servicespecs:servicespec-info
+                /app/information/subscription.json=subscriptions:subscription-info
+                /app/information/nodestatus.json=nodestatuses:nodestatus-info
+            - name: CRD_GROUP
+              value: ha.example.com
+            - name: CRD_VERSION
+              value: v1
+            - name: NAMESPACE
+              value: arha-system
+            - name: IN_CLUSTER
+              value: "true"
+          volumeMounts:
+            - name: information
+              mountPath: /app/information
+        volumes:
+          - name: information
+            persistentVolumeClaim:
+              claimName: arha-system-information
+          - name: logs-volume
+            persistentVolumeClaim:
+              claimName: arha-logs-pvc
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                - key: arha-node-type
+                  operator: In
+                  values:
+                  - controller-node
+        tolerations:
+          - key: "node-role.kubernetes.io/control-plane"
+            operator: "Exists"
+            effect: "NoSchedule"
