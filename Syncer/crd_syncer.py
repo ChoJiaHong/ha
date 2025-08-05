@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Tuple
 
 from kubernetes import client, config
-from kubernetes.client import ApiException
+from kubernetes.client import ApiException, ApiextensionsV1Api
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -64,6 +64,18 @@ def get_cr_data(body: Dict) -> Dict:
     return body.get("spec", {}).get("data", {})
 
 
+def crd_exists(ext_api: ApiextensionsV1Api, group: str, plural: str) -> bool:
+    """Check if the CRD for given group/plural exists."""
+    name = f"{plural}.{group}"
+    try:
+        ext_api.read_custom_resource_definition(name)
+        return True
+    except ApiException as e:
+        if e.status == 404:
+            return False
+        raise
+
+
 def sync_loop():
     file_map_raw = os.environ.get("FILE_MAP", "")
     if not file_map_raw:
@@ -76,23 +88,29 @@ def sync_loop():
     interval = float(os.environ.get("SYNC_INTERVAL", "5"))
 
     api = client.CustomObjectsApi()
+    ext_api = ApiextensionsV1Api()
 
     state: Dict[str, Dict[str, str]] = {}
-    for path, (plural, name) in mappings.items():
-        body = ensure_cr(api, group, version, namespace, plural, name)
-        cr_md5 = md5sum(json.dumps(get_cr_data(body), sort_keys=True))
-        if os.path.exists(path):
-            with open(path) as f:
-                content = f.read()
-        else:
-            content = json.dumps({}, indent=2, sort_keys=True)
-            with open(path, "w") as f:
-                f.write(content)
-        file_md5 = md5sum(content)
-        state[path] = {"file_md5": file_md5, "cr_md5": cr_md5}
 
     while True:
         for path, (plural, name) in mappings.items():
+            if path not in state:
+                if not crd_exists(ext_api, group, plural):
+                    logging.info("CRD %s.%s not found; will retry later", plural, group)
+                    continue
+                body = ensure_cr(api, group, version, namespace, plural, name)
+                cr_md5 = md5sum(json.dumps(get_cr_data(body), sort_keys=True))
+                if os.path.exists(path):
+                    with open(path) as f:
+                        content = f.read()
+                else:
+                    content = json.dumps({}, indent=2, sort_keys=True)
+                    with open(path, "w") as f:
+                        f.write(content)
+                file_md5 = md5sum(content)
+                state[path] = {"file_md5": file_md5, "cr_md5": cr_md5}
+                continue
+
             st = state[path]
 
             # read file
