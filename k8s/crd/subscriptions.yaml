@@ -1,0 +1,15 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: subscriptions.ha.example.com
+spec:
+  group: ha.example.com
+  names:
+    plural: subscriptions
+    singular: subscription
+    kind: Subscription
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
