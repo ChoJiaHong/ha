@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crd-syncer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crd-syncer
+  template:
+    metadata:
+      labels:
+        app: crd-syncer
+    spec:
+      containers:
+        - name: syncer
+          image: ghcr.io/example/crd-syncer:latest
+          env:
+            - name: FILE_MAP
+              value: "/data/state.json=states:example"
+            - name: CRD_GROUP
+              value: ha.example.com
+            - name: CRD_VERSION
+              value: v1
+            - name: CRD_NAMESPACE
+              value: default
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
