@@ -26,7 +26,7 @@ spec:
               mountPath: /app/logdir
           env:
             - name: OPTIMIZER_FUNCTION
-              value: "optimize"  # 可改為 optimize 或 uniform 或 most_remaining
+              value: "optimize"
         - name: result
           image: harbor.pdc.tw/arha/result:latest
           ports:
@@ -36,7 +36,7 @@ spec:
             - name: information
               mountPath: /app/information
         - name: crd-syncer
-          image: harbor.pdc.tw/arha/syncer:latest
+          image: hiro08081/crd-syncer:2
           env:
             - name: FILE_MAP
               value: |
@@ -55,23 +55,23 @@ spec:
           volumeMounts:
             - name: information
               mountPath: /app/information
-        volumes:
-          - name: information
-            persistentVolumeClaim:
-              claimName: arha-system-information
-          - name: logs-volume
-            persistentVolumeClaim:
-              claimName: arha-logs-pvc
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: arha-node-type
-                  operator: In
-                  values:
-                  - controller-node
-        tolerations:
-          - key: "node-role.kubernetes.io/control-plane"
-            operator: "Exists"
-            effect: "NoSchedule"
+      volumes:   # 這裡開始要注意
+        - name: information
+          persistentVolumeClaim:
+            claimName: arha-system-information
+        - name: logs-volume
+          persistentVolumeClaim:
+            claimName: arha-logs-pvc
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: arha-node-type
+                operator: In
+                values:
+                - controller-node
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
