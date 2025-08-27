@@ -15,6 +15,10 @@ import logging
 import sys
 import asyncio
 import os
+from contextlib import asynccontextmanager
+import fcntl
+import tempfile
+import shutil
 
 GPU_MEMORY_LABEL = "nvidia.com/gpu.memory"
 IN_CLUSTER = True
@@ -23,8 +27,6 @@ SERVICESPEC_FILE = './information/serviceSpec.json'
 SUBSCRIPTION_FILE = './information/subscription.json'
 NODE_STATUS_FILE = './information/nodestatus.json'
 LOG_FILE = './logdir/controller.log'
-
-locked = False
 
 # 讀取環境變數來決定使用哪個函式
 function_name = os.getenv("OPTIMIZER_FUNCTION", "optimize")
@@ -112,7 +114,7 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-@app.post('/subscribe') # 接收訂閱請求
+@app.post('/subscribe')
 async def subscribe(request: Request, subscription: SubscriptionRequest):
     data = subscription
     agent_ip = data.ip
@@ -132,226 +134,85 @@ async def subscribe(request: Request, subscription: SubscriptionRequest):
                     if serviceSpec['serviceType'] == serviceType:
                         serviceNotFound = False
                         break
-                if (serviceNotFound):
+                if serviceNotFound:
                     raise HTTPException(status_code=500, detail="Service not in serviceSpec file")
             except json.decoder.JSONDecodeError: 
                 raise HTTPException(status_code=500, detail="ServiceSpec file is empty")
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="ServiceSpec file not found")
 
-    global locked
-    while locked:
-        await asyncio.sleep(1)
-
-    locked = True
-    agentCounter = 1
-    with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
+    # 使用新的鎖機制
+    async with controller_lock.acquire_with_timeout():
         try:
-            subscription_list = json.load(subscription_jsonFile)
-        except json.decoder.JSONDecodeError: 
-            subscription_list = []
-    
-    agentCounter += sum(1 for subscription in subscription_list if subscription['serviceType'] == serviceType)
-    relation_list = compute_frequnecy(serviceType, agentCounter)
+            agentCounter = 1
+            
+            # 使用安全的檔案讀取
+            subscription_list = await safe_read_json(SUBSCRIPTION_FILE, default=[])
+            
+            agentCounter += sum(1 for subscription in subscription_list if subscription['serviceType'] == serviceType)
+            relation_list = compute_frequnecy(serviceType, agentCounter)
 
-    newAgentCounter = 0
-    for relation in relation_list:
-        if relation['serviceType'] == serviceType:
-            newAgentCounter += int(relation['currentConnection'])
-    
-    if newAgentCounter == (agentCounter-1):
-        locked = False
-        return 'reject the subscription' 
-    elif newAgentCounter == agentCounter:
-        with open(SERVICE_FILE, 'w') as service_jsonFile:
-            json.dump(relation_list, service_jsonFile, indent=4)
+            newAgentCounter = 0
+            for relation in relation_list:
+                if relation['serviceType'] == serviceType:
+                    newAgentCounter += int(relation['currentConnection'])
+            
+            if newAgentCounter == (agentCounter-1):
+                return 'reject the subscription' 
+            elif newAgentCounter == agentCounter:
+                # 安全的檔案寫入
+                await safe_write_json(SERVICE_FILE, relation_list)
 
-        # 這邊adjust_frequency只會調整new agent以外的配對關係
-        serviceIndex = adjust_frequency(serviceType)
+                # 這邊adjust_frequency只會調整new agent以外的配對關係
+                serviceIndex = adjust_frequency(serviceType)
 
-        with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-            try:
-                subscription_list = json.load(subscription_jsonFile)
-            except json.decoder.JSONDecodeError: 
-                subscription_list = []
+                subscription_list = await safe_read_json(SUBSCRIPTION_FILE, default=[])
 
-        if serviceIndex is None:
-            locked = False
-            logging.info(f"Function adjust_frequency() return None")
-            return 'controller program bug'
-        else:
-            subscription_list.append({
-                "agentIP": agent_ip,
-                "agentPort": agent_port,
-                "podIP": relation_list[serviceIndex]['podIP'],
-                "serviceType": serviceType,
-                "nodeName": relation_list[serviceIndex]['nodeName']            
-            })
-        with open(SUBSCRIPTION_FILE, 'w') as subscription_jsonFile:
-            json.dump(subscription_list, subscription_jsonFile, indent=4)
-            locked = False
-            return {
-                "IP": relation_list[serviceIndex]['hostIP'],
-                "Port": relation_list[serviceIndex]['hostPort'],
-                "Frequency": relation_list[serviceIndex]['currentFrequency']
-            }
-    else:
-        locked = False
-        return f"newAgentCounter={newAgentCounter} and agentCounter={agentCounter}" 
+                if serviceIndex is None:
+                    logging.info(f"Function adjust_frequency() return None")
+                    return 'controller program bug'
+                else:
+                    subscription_list.append({
+                        "agentIP": agent_ip,
+                        "agentPort": agent_port,
+                        "podIP": relation_list[serviceIndex]['podIP'],
+                        "serviceType": serviceType,
+                        "nodeName": relation_list[serviceIndex]['nodeName']            
+                    })
+                    
+                await safe_write_json(SUBSCRIPTION_FILE, subscription_list)
+                
+                return {
+                    "IP": relation_list[serviceIndex]['hostIP'],
+                    "Port": relation_list[serviceIndex]['hostPort'],
+                    "Frequency": relation_list[serviceIndex]['currentFrequency']
+                }
+            else:
+                return f"newAgentCounter={newAgentCounter} and agentCounter={agentCounter}"
+                
+        except Exception as e:
+            logging.error(f"Subscribe failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @app.post('/alert')
 async def alert(request: Request):
-
-    global locked
-    while locked:
-        await asyncio.sleep(1)
-    locked = True    
-    data = await request.json()
-    alertType = data['alertType']
-    alertContent = data['alertContent']
-
-    # 處理Computing Node 故障的Case
-    if alertType == 'workernode_failure':
-        
-        failnodeName = alertContent['nodeName']
-
-        # 將故障的Computing Node上的所有服務從資料中清除
+    async with controller_lock.acquire_with_timeout():
         try:
-            with open(SERVICE_FILE, 'r') as service_file:
-                try:
-                    service_list = json.load(service_file)
-                except json.decoder.JSONDecodeError:
-                    service_list = []
-        except FileNotFoundError:
-            raise HTTPException(status_code=500, detail="Service file not found")
-        
-        failed_service_list = [item for item in service_list if item.get('nodeName') == failnodeName]
-        service_list = [item for item in service_list if item.get('nodeName') != failnodeName]
+            data = await request.json()
+            alertType = data['alertType']
+            alertContent = data['alertContent']
 
-        try:
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(service_list, service_file, indent=4)
+            # 處理Computing Node 故障的Case
+            if alertType == 'workernode_failure':
+                await handle_workernode_failure(alertContent)
+            elif alertType == 'pod_failure':
+                await handle_pod_failure(alertContent)
+            
+            return f"message: Alert {alertType} handled successfully"
+            
         except Exception as e:
-            raise HTTPException(status_code=500, detail="Failed to write to service file")
-
-        # 處理故障節點上的所有service
-        for failed_service in failed_service_list:
-            
-            # 從k8s中刪除service
-            delete_pod(str(failed_service['serviceType'])+'-'+str(failed_service['nodeName'])+'-'+str(failed_service['hostPort']),'default')
-            
-            # 打開訂閱資料
-            try:
-                with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-                    try:
-                        subscription_list = json.load(subscription_jsonFile)
-                    except json.decoder.JSONDecodeError:
-                        subscription_list = []
-            except FileNotFoundError:
-                raise HTTPException(status_code=500, detail="Subscription file not found")
-            
-            # 若沒有任何終端訂閱故障service
-            if failed_service['currentConnection'] == 0:
-                continue
-
-            # 若有終端訂閱故障之service
-            agentCounter = 0
-            agentCounter += sum(1 for subscription in subscription_list if subscription['serviceType'] == failed_service['serviceType'])
-            relation_list = compute_frequnecy(str(failed_service['serviceType']), agentCounter)
-
-            # 計算最後有多少Agent能使用服務 
-            newAgentCounter = 0
-            for relation in relation_list:
-                if relation['serviceType'] == str(failed_service['serviceType']):
-                    newAgentCounter += int(relation['currentConnection'])
-
-            # 若非所有Agent都能使用服務
-            if newAgentCounter < agentCounter:
-                count = 0
-                unsunscribedAgentCounter = agentCounter - newAgentCounter
-                for i in reversed(range(len(subscription_list))):
-                    if subscription_list[i]['podIP'] == str(failed_service['podIP']):
-                        del subscription_list[i]
-                        count += 1
-                        if count >= unsunscribedAgentCounter:
-                            break
-                with open(SUBSCRIPTION_FILE, 'w') as subscription_file:
-                    json.dump(subscription_list, subscription_file, indent=4)
-
-            # 將新的配對方式存入service_file中
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(relation_list, service_file, indent=4)                
-            adjust_frequency(str(failed_service['serviceType']))        
-    elif alertType == 'pod_failure':
-
-        failPodName = str(alertContent['podName'])
-        serviceType, nodeName, hostPort = failPodName.split('-')
-        hostPort = int(hostPort)
-        delete_pod(failPodName)
-
-        with open(SERVICE_FILE, 'r') as service_file:
-            try:
-                service_list = json.load(service_file)
-            except json.decoder.JSONDecodeError:
-                service_list = []
-
-        # 找到符合條件的元素
-        failed_service = next(
-            (service for service in service_list if 
-                service['serviceType'] == serviceType and 
-                service['nodeName'] == nodeName and 
-                service['hostPort'] == hostPort), 
-            None  # 若找不到，返回 None
-        )
-
-        # 如果找到，則從 service_list 刪除
-        if failed_service:
-            service_list.remove(failed_service)
-
-        with open(SERVICE_FILE, 'w') as service_file:
-            json.dump(service_list, service_file, indent=4)
-
-        if failed_service['currentConnection'] != 0:
-
-            # 打開訂閱資料
-            try:
-                with open(SUBSCRIPTION_FILE, 'r') as subscription_jsonFile:
-                    try:
-                        subscription_list = json.load(subscription_jsonFile)
-                    except json.decoder.JSONDecodeError:
-                        subscription_list = []
-            except FileNotFoundError:
-                raise HTTPException(status_code=500, detail="Subscription file not found")
-            
-            agentCounter = 0
-            agentCounter += sum(1 for subscription in subscription_list if subscription['serviceType'] == failed_service['serviceType'])
-            relation_list = compute_frequnecy(str(failed_service['serviceType']), agentCounter)
-
-            # 計算最後有多少Agent能使用服務 
-            newAgentCounter = 0
-            for relation in relation_list:
-                if relation['serviceType'] == str(failed_service['serviceType']):
-                    newAgentCounter += int(relation['currentConnection'])
-
-            # 若非所有Agent都能使用服務
-            if newAgentCounter < agentCounter:
-                count = 0
-                unsunscribedAgentCounter = agentCounter - newAgentCounter
-                for i in reversed(range(len(subscription_list))):
-                    if subscription_list[i]['podIP'] == str(failed_service['podIP']):
-                        del subscription_list[i]
-                        count += 1
-                        if count >= unsunscribedAgentCounter:
-                            break
-                with open(SUBSCRIPTION_FILE, 'w') as subscription_file:
-                    json.dump(subscription_list, subscription_file, indent=4)
-
-            with open(SERVICE_FILE, 'w') as service_file:
-                json.dump(relation_list, service_file, indent=4)
-
-        adjust_frequency(str(failed_service['serviceType']))  
-    locked = False
-    return (f"message: Alert {alertType} handled successfully")
+            logging.error(f"Alert handling failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Alert handling error: {str(e)}")
 
 @app.post('/deploypod')
 async def deploypod(request: Request):
@@ -908,3 +769,123 @@ def is_pod_terminating(core_api, pod_name, namespace="default"):
             return False
         logging.error(f"Error checking pod status: {e}")
     return False
+
+async def handle_workernode_failure(alertContent):
+    """處理節點故障"""
+    failnodeName = alertContent['nodeName']
+    
+    # 讀取服務列表
+    service_list = await safe_read_json(SERVICE_FILE, default=[])
+    
+    failed_service_list = [item for item in service_list if item.get('nodeName') == failnodeName]
+    service_list = [item for item in service_list if item.get('nodeName') != failnodeName]
+    
+    # 更新服務檔案
+    await safe_write_json(SERVICE_FILE, service_list)
+    
+    # 處理故障節點上的所有service
+    for failed_service in failed_service_list:
+        # 從k8s中刪除service
+        delete_pod(str(failed_service['serviceType'])+'-'+str(failed_service['nodeName'])+'-'+str(failed_service['hostPort']),'default')
+        
+        if failed_service['currentConnection'] == 0:
+            continue
+            
+        await handle_service_migration(failed_service)
+
+async def handle_pod_failure(alertContent):
+    """處理 Pod 故障"""
+    failPodName = str(alertContent['podName'])
+    serviceType, nodeName, hostPort = failPodName.split('-')
+    hostPort = int(hostPort)
+    
+    delete_pod(failPodName)
+    
+    service_list = await safe_read_json(SERVICE_FILE, default=[])
+    
+    # 找到並移除故障的服務
+    failed_service = next(
+        (service for service in service_list if 
+            service['serviceType'] == serviceType and 
+            service['nodeName'] == nodeName and 
+            service['hostPort'] == hostPort), 
+        None
+    )
+    
+    if failed_service:
+        service_list.remove(failed_service)
+        await safe_write_json(SERVICE_FILE, service_list)
+        
+        if failed_service['currentConnection'] != 0:
+            await handle_service_migration(failed_service)
+    
+    adjust_frequency(str(serviceType))
+
+async def handle_service_migration(failed_service):
+    """處理服務遷移邏輯"""
+    subscription_list = await safe_read_json(SUBSCRIPTION_FILE, default=[])
+    
+    agentCounter = sum(1 for subscription in subscription_list if subscription['serviceType'] == failed_service['serviceType'])
+    relation_list = compute_frequnecy(str(failed_service['serviceType']), agentCounter)
+    
+    # 計算最後有多少Agent能使用服務 
+    newAgentCounter = sum(int(relation['currentConnection']) for relation in relation_list if relation['serviceType'] == str(failed_service['serviceType']))
+    
+    # 若非所有Agent都能使用服務
+    if newAgentCounter < agentCounter:
+        count = 0
+        unsunscribedAgentCounter = agentCounter - newAgentCounter
+        for i in reversed(range(len(subscription_list))):
+            if subscription_list[i]['podIP'] == str(failed_service['podIP']):
+                del subscription_list[i]
+                count += 1
+                if count >= unsunscribedAgentCounter:
+                    break
+        
+        await safe_write_json(SUBSCRIPTION_FILE, subscription_list)
+    
+    # 將新的配對方式存入service_file中
+    await safe_write_json(SERVICE_FILE, relation_list)
+    adjust_frequency(str(failed_service['serviceType']))
+
+@app.get('/health')
+async def health_check():
+    """健康檢查端點"""
+    try:
+        # 檢查鎖的狀態
+        lock_status = "available" if not controller_lock._lock.locked() else "busy"
+        
+        # 檢查關鍵檔案
+        files_status = {}
+        for file_path in [SERVICE_FILE, SUBSCRIPTION_FILE, SERVICESPEC_FILE, NODE_STATUS_FILE]:
+            files_status[file_path] = "exists" if os.path.exists(file_path) else "missing"
+        
+        return {
+            "status": "healthy",
+            "lock_status": lock_status,
+            "files_status": files_status,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+@app.get('/metrics')
+async def get_metrics():
+    """系統指標端點"""
+    try:
+        service_list = await safe_read_json(SERVICE_FILE, default=[])
+        subscription_list = await safe_read_json(SUBSCRIPTION_FILE, default=[])
+        
+        return {
+            "total_services": len(service_list),
+            "total_subscriptions": len(subscription_list),
+            "lock_status": "available" if not controller_lock._lock.locked() else "busy",
+            "services_by_type": {},
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {e}")

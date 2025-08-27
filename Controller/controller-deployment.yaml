@@ -36,14 +36,14 @@ spec:
             - name: information
               mountPath: /app/information
         - name: crd-syncer
-          image: hiro08081/crd-syncer:2
+          image: hiro08081/crd-syncer-gpt:4
           env:
             - name: FILE_MAP
               value: |
-                /app/information/service.json=services:service-info
-                /app/information/serviceSpec.json=servicespecs:servicespec-info
-                /app/information/subscription.json=subscriptions:subscription-info
-                /app/information/nodestatus.json=nodestatuses:nodestatus-info
+                /app/information/service.json=services:service-info:Service
+                /app/information/serviceSpec.json=servicespecs:servicespec-info:ServiceSpec
+                /app/information/subscription.json=subscriptions:subscription-info:Subscription
+                /app/information/nodestatus.json=nodestatuses:nodestatus-info:NodeStatus
             - name: CRD_GROUP
               value: ha.example.com
             - name: CRD_VERSION

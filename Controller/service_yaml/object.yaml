@@ -4,6 +4,7 @@ metadata:
   name: object-workergpu-30500
   labels:
     app: object
+    monitor: ml_server
 spec:
   containers:
   - name: object

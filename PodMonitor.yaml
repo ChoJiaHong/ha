@@ -8,6 +8,7 @@ spec:
   selector:
     matchLabels:
       app: infer
+      monitor: ml_server   # 要跟你的 Pod 用的 label 一致
   podMetricsEndpoints:
   - port: metrics         # 要和上面 Pod 裡的 containerPort name 一致
     path: /metrics

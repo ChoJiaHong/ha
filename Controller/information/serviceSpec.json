@@ -2,8 +2,8 @@
     {
         "serviceType": "gesture",
         "frequencyLimit": [
-            20,
-            10
+            30,
+            15
         ],
         "workAbility":{
             "workgpu" : 180,
@@ -14,8 +14,8 @@
     {
         "serviceType": "pose",
         "frequencyLimit": [
-            30,
-            15
+            20,
+            10
         ],
         "workAbility":{
             "workgpu" : 66,
