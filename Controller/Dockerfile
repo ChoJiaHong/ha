@@ -9,3 +9,7 @@ COPY service_yaml ./service_yaml
 RUN mkdir -p /information
 RUN mkdir -p /logdir
 CMD ["uvicorn", "controller:app", "--host", "0.0.0.0", "--port", "5000"]
+
+
+
+#uvicorn controller:app --host 0.0.0.0 --port 5000

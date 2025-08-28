@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: controller
-          image: harbor.pdc.tw/yuchiehpaper/controller:latest
+          image: hiro08081/controller:2
           command: ["sleep", "infinity"]
 
           ports:
@@ -38,7 +38,7 @@ spec:
             - name: information
               mountPath: /app/information
         - name: crd-syncer
-          image: hiro08081/crd-syncer-gpt:4
+          image: hiro08081/crd-syncer-gpt:5
           env:
             - name: FILE_MAP
               value: |
